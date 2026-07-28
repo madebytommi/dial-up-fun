@@ -438,6 +438,10 @@ body {
     min-width: 150px;
 }
 
+.aol-urlbar .btn-go {
+    font-family: Arial, sans-serif;
+}
+
 .aol-desktop {
     flex: 1;
     position: relative;
