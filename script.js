@@ -1,5 +1,47 @@
 // Web Audio API V.90 modem emulation & Win95 integration
 
+// Modern User Preferences Helper with LocalStorage Persistence
+const UserPreferences = {
+    STORAGE_KEY: 'dialup_portal_prefs',
+
+    load() {
+        try {
+            const data = localStorage.getItem(this.STORAGE_KEY);
+            return data ? JSON.parse(data) : { volume: 0.6, defaultPhoneNumber: '5550199' };
+        } catch (err) {
+            console.warn('Unable to access localStorage, using defaults:', err);
+            return { volume: 0.6, defaultPhoneNumber: '5550199' };
+        }
+    },
+
+    save(prefs) {
+        try {
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(prefs));
+        } catch (err) {
+            console.warn('Failed to persist user preferences:', err);
+        }
+    }
+};
+
+// Application State & User Settings
+const currentPrefs = UserPreferences.load();
+
+// Frozen Configuration Object
+const MODEM_CONFIG = Object.freeze({
+    speedRatio: 0.6,
+    get dtmfDuration() { return 0.08 * this.speedRatio; },
+    get dtmfSpacing() { return 0.06 * this.speedRatio; },
+    answerFrequency: 2100,
+    staticVolume: currentPrefs.volume,
+    defaultPhoneNumber: currentPrefs.defaultPhoneNumber,
+    dtmfFrequencies: Object.freeze({
+        '1': [697, 1209], '2': [697, 1336], '3': [697, 1477],
+        '4': [770, 1209], '5': [770, 1336], '6': [770, 1477],
+        '7': [852, 1209], '8': [852, 1336], '9': [852, 1477],
+        '0': [941, 1336]
+    })
+});
+
 // DOM Elements
 const logonModal = document.getElementById('logon-modal');
 const loadingContainer = document.getElementById('loading-container');
@@ -12,24 +54,9 @@ let audioCtx = null;
 let activeSetouts = [];
 let isConnecting = false;
 
-// Fixed params
-const speedRatio = 0.6;
-const dtmfDur = 0.08 * speedRatio;
-const dtmfSpace = 0.06 * speedRatio;
-const answerFreq = 2100;
-const staticVol = 0.6;
-
-// DTMF mapping
-const dtmfFrequencies = {
-    '1': [697, 1209], '2': [697, 1336], '3': [697, 1477],
-    '4': [770, 1209], '5': [770, 1336], '6': [770, 1477],
-    '7': [852, 1209], '8': [852, 1336], '9': [852, 1477],
-    '0': [941, 1336]
-};
-
-// Update status text
+// Update status text safely using textContent
 function updateStatus(text) {
-    statusText.innerHTML = text;
+    statusText.textContent = text;
 }
 
 // Sequence callback execution
@@ -142,14 +169,16 @@ function startConnection() {
 
     // P2: DTMF tones
     schedule(() => updateStatus("DIALING ISP..."), (t - audioCtx.currentTime) * 1000);
-    const phoneNumber = "5550199";
+    const phoneNumber = MODEM_CONFIG.defaultPhoneNumber;
 
     for (let i = 0; i < phoneNumber.length; i++) {
         const digit = phoneNumber[i];
-        const freqs = dtmfFrequencies[digit];
-        createOscillator(freqs[0], 'sine', t, dtmfDur, 0.15);
-        createOscillator(freqs[1], 'sine', t, dtmfDur, 0.15);
-        t += dtmfDur + dtmfSpace;
+        const freqs = MODEM_CONFIG.dtmfFrequencies[digit];
+        if (freqs) {
+            createOscillator(freqs[0], 'sine', t, MODEM_CONFIG.dtmfDuration, 0.15);
+            createOscillator(freqs[1], 'sine', t, MODEM_CONFIG.dtmfDuration, 0.15);
+            t += MODEM_CONFIG.dtmfDuration + MODEM_CONFIG.dtmfSpacing;
+        }
     }
 
     t += 0.4;
@@ -166,26 +195,26 @@ function startConnection() {
     // P3: Answer Squeal
     schedule(() => updateStatus("NEGOTIATING PARAMETERS..."), (t - audioCtx.currentTime) * 1000);
 
-    createOscillator(answerFreq, 'sine', t, 2.8, 0.15);
-    createOscillator(answerFreq + 50, 'sine', t + 1.0, 1.8, 0.05); // Phasing
+    createOscillator(MODEM_CONFIG.answerFrequency, 'sine', t, 2.8, 0.15);
+    createOscillator(MODEM_CONFIG.answerFrequency + 50, 'sine', t + 1.0, 1.8, 0.05); // Phasing
     t += 3.0;
 
     // P4: Handshakes & Noise
     schedule(() => updateStatus("ESTABLISHING CARRIER..."), (t - audioCtx.currentTime) * 1000);
 
     // White noise
-    generateWhiteNoise(t, 8.0, staticVol * 0.4);
+    generateWhiteNoise(t, 8.0, MODEM_CONFIG.staticVolume * 0.4);
 
     // Oscillate bauds
     for (let i = 0; i < 25; i++) {
         const f = 1500 + (Math.random() * 1000);
         const dur = 0.05 + (Math.random() * 0.15);
-        createOscillator(f, 'square', t + (i * 0.3), dur, staticVol * 0.06);
+        createOscillator(f, 'square', t + (i * 0.3), dur, MODEM_CONFIG.staticVolume * 0.06);
     }
 
     for (let i = 0; i < 10; i++) {
         const f2 = 800 + (Math.random() * 500);
-        createOscillator(f2, 'triangle', t + 2 + (i * 0.5), 0.2, staticVol * 0.08);
+        createOscillator(f2, 'triangle', t + 2 + (i * 0.5), 0.2, MODEM_CONFIG.staticVolume * 0.08);
     }
     t += 8.5;
 
@@ -226,4 +255,3 @@ function endConnection(successfullyCompleted = false) {
 
 btnConnect.addEventListener('click', startConnection);
 btnAbort.addEventListener('click', () => endConnection(false));
-
