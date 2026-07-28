@@ -1,0 +1,97 @@
+name: Gemini PR Reviewer
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install google-genai requests
+
+      - name: Run Gemini Review
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python -c "
+          import os, subprocess, requests
+          from google import genai
+
+          base = os.environ['BASE_SHA']
+          head = os.environ['HEAD_SHA']
+
+          # Get the diff between PR base and head
+          try:
+              diff = subprocess.check_output(['git', 'diff', f'{base}...{head}']).decode('utf-8')
+          except Exception as e:
+              print('Error getting diff:', e)
+              exit(1)
+
+          if not diff.strip():
+              print('No diff found.')
+              exit(0)
+
+          # Limit diff to ~15,000 characters to stay well within token thresholds
+          diff_truncated = diff[:15000]
+
+          # Call Gemini 2.5 Flash API
+          client = genai.Client(api_key=os.environ['GEMINI_API_KEY'])
+          prompt = f'''You are an expert lead software developer reviewing a Pull Request.
+          Analyze the following git diff and provide constructive code review feedback.
+          
+          Focus on:
+          1. Potential security risks (XSS, bad DOM manipulation, hardcoded credentials)
+          2. Code quality & maintainability
+          3. UX or logic improvements
+          
+          Format your output cleanly in Markdown with concise bullet points and clear code blocks.
+          
+          Git Diff:
+          \`\`\`diff
+          {diff_truncated}
+          \`\`\`
+          '''
+
+          response = client.models.generate_content(
+              model='gemini-2.5-flash',
+              contents=prompt
+          )
+
+          review_body = response.text
+
+          # Post the review as a PR comment using standard GITHUB_TOKEN
+          repo = os.environ['REPO']
+          pr_num = os.environ['PR_NUMBER']
+          url = f'https://api.github.com/repos/{repo}/issues/{pr_num}/comments'
+          headers = {
+              'Authorization': f'Bearer {os.environ[\"GITHUB_TOKEN\"]}',
+              'Accept': 'application/vnd.github+json'
+          }
+          data = {'body': f'### Gemini Code Review\n\n{review_body}'}
+
+          res = requests.post(url, headers=headers, json=data)
+          print('GitHub API response status:', res.status_code)
+          "
