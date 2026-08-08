@@ -2,7 +2,7 @@
 
 A lil retro **AOL / Windows 95–style dial-up sign-on screen** you can run right in the browser. Click **Connect** to play a timed “dial → DTMF tones → ringback → handshake/static → connected” sequence, then it reveals an AOL-inspired “workspace” UI.
 
-Live site: https://tommithetechie.github.io/dial-up-fun/
+Live site: https://madebytommi.github.io/dial-up-fun/
 
 ---
 
@@ -41,12 +41,12 @@ No build step, no frameworks—just static files that work great with GitHub Pag
 ## Open it on GitHub Pages
 
 ### Option A: Use the hosted link (recommended)
-Open: https://tommithetechie.github.io/dial-up-fun/
+Open: https://madebytommi.github.io/dial-up-fun/
 
 ### Option B: Run locally
 1. Clone the repo:
    ```bash
-   git clone https://github.com/tommithetechie/dial-up-fun.git
+   git clone https://github.com/madebytommi/dial-up-fun.git
    cd dial-up-fun
    ```
 2. Open `index.html` in your browser **or** run a quick local server (best for consistency):
